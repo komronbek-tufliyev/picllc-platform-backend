@@ -1,0 +1,21 @@
+# Example override file for local development
+# Copy this to docker-compose.override.yml and customize
+
+version: '3.8'
+
+services:
+  web:
+    # Override command for development (runserver instead of gunicorn)
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+      - /app/venv  # Exclude venv from volume mount
+
+  celery_worker:
+    # Development: auto-reload on code changes
+    command: celery -A ujmp worker --loglevel=debug --reload
+
+  celery_beat:
+    # Development: verbose logging
+    command: celery -A ujmp beat --loglevel=debug
+
