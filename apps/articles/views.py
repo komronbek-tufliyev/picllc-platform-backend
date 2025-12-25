@@ -26,6 +26,7 @@ from apps.accounts.permissions import (
     IsAuthor,
     IsReviewer,
     IsAdmin,
+    IsAuthorOrAdmin,
     IsReviewerOrAdmin
 )
 from apps.journals.models import ReviewerJournalAssignment
@@ -83,7 +84,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return [IsAuthenticated()]  # Any authenticated user can create
         elif self.action in ['update', 'partial_update', 'destroy']:
-            return [IsAuthor() | IsAdmin()]
+            return [IsAuthorOrAdmin()]
         return super().get_permissions()
     
     def get_throttles(self):

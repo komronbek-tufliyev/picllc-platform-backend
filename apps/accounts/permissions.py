@@ -37,6 +37,17 @@ class IsAdmin(permissions.BasePermission):
         )
 
 
+class IsAuthorOrAdmin(permissions.BasePermission):
+    """Permission class to check if user is Author or Admin."""
+    
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.role in ['AUTHOR', 'ADMIN']
+        )
+
+
 class IsReviewerOrAdmin(permissions.BasePermission):
     """Permission class to check if user is Reviewer or Admin."""
     

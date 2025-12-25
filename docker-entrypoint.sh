@@ -20,6 +20,9 @@ echo "Collecting static files..."
 python manage.py collectstatic --noinput || true
 
 echo "Creating superuser if needed..."
+if [ "${SKIP_SUPERUSER:-false}" = "true" ]; then
+  echo "Skipping superuser creation (SKIP_SUPERUSER=true)"
+else
 python manage.py shell << EOF
 from django.contrib.auth import get_user_model
 import os
@@ -28,11 +31,13 @@ admin_email = os.getenv('DJANGO_SUPERUSER_EMAIL', 'admin@ujmp.local')
 admin_username = os.getenv('DJANGO_SUPERUSER_USERNAME', 'admin')
 admin_password = os.getenv('DJANGO_SUPERUSER_PASSWORD', 'admin123')
 if not User.objects.filter(email=admin_email).exists():
-    User.objects.create_superuser(admin_email, admin_username, admin_password)
+    # create_superuser expects username first, then email
+    User.objects.create_superuser(admin_username, admin_email, admin_password)
     print(f'Superuser created: {admin_email} / {admin_password}')
 else:
     print('Superuser already exists')
 EOF
+fi
 
 echo "Starting application..."
 exec "$@"

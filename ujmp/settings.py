@@ -23,6 +23,7 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Application definition
 INSTALLED_APPS = [
+    'jazzmin',  # Modern admin UI - must be before django.contrib.admin
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -212,7 +213,8 @@ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 # HTTPS Settings (enable in production)
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    # Allow override via env to avoid redirect loops/HTTPS healthcheck issues in dev
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000  # 1 year
@@ -270,4 +272,192 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+
+# Jazzmin Admin UI Configuration
+JAZZMIN_SETTINGS = {
+    # Title on the login screen
+    "site_title": "UJMP Admin",
+    
+    # Title on the brand (19 chars max)
+    "site_header": "UJMP",
+    
+    # Title on the brand when screen is <1200px (19 chars max)
+    "site_brand": "UJMP",
+    
+    # Logo to use for your site, must be present in static files
+    "site_logo": None,
+    
+    # Logo to use for login form, must be present in static files
+    "login_logo": None,
+    
+    # Logo to use for login form in dark themes, must be present in static files
+    "login_logo_dark": None,
+    
+    # CSS classes that are applied to the logo above
+    "site_logo_classes": "img-circle",
+    
+    # Relative path to a favicon for your site, will default to site_logo if absent
+    "site_icon": None,
+    
+    # Welcome text on the login screen
+    "welcome_sign": "Welcome to UJMP Admin Panel",
+    
+    # Copyright on the footer
+    "copyright": "Unified Journal Management Platform",
+    
+    # The model admin to search from the search bar
+    "search_model": ["accounts.User", "articles.Article", "journals.Journal"],
+    
+    # Field name on user model that contains avatar ImageField/URLField/Charfield or a callable that receives the user
+    "user_avatar": None,
+    
+    ############
+    # Top Menu #
+    ############
+    
+    # Links to put along the top menu
+    "topmenu_links": [
+        # Url that gets reversed (Permissions can be added)
+        {"name": "Home", "url": "admin:index", "permissions": ["auth.view_user"]},
+        
+        # external url that opens in a new window (Permissions can be added)
+        {"name": "API Docs", "url": "/api/schema/swagger-ui/", "new_window": True},
+        
+        # model admin to link to (Permissions checked against model)
+        {"model": "accounts.User"},
+        
+        # App with dropdown menu to all its models pages (Permissions checked against models)
+        {"app": "articles"},
+    ],
+    
+    #############
+    # User Menu #
+    #############
+    
+    # Additional links to include in the user menu on the top right
+    "usermenu_links": [
+        {"name": "API Documentation", "url": "/api/schema/swagger-ui/", "new_window": True},
+        {"model": "accounts.user"}
+    ],
+    
+    #############
+    # Side Menu #
+    #############
+    
+    # Whether to display the side menu
+    "show_sidebar": True,
+    
+    # Whether to aut expand the menu
+    "navigation_expanded": True,
+    
+    # Hide these apps when generating side menu
+    "hide_apps": [],
+    
+    # Hide these models when generating side menu
+    "hide_models": [],
+    
+    # List of apps (and/or models) to base side menu ordering off of
+    "order_with_respect_to": ["accounts", "journals", "articles", "payments", "certificates", "audit"],
+    
+    # Custom links to append to app groups, keyed on app name
+    "custom_links": {
+        "articles": [{
+            "name": "Workflow Dashboard",
+            "url": "/admin/articles/article/",
+            "icon": "fas fa-tasks",
+            "permissions": ["articles.view_article"]
+        }]
+    },
+    
+    # Custom icons for side menu apps/models
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "accounts.user": "fas fa-user",
+        "accounts.Group": "fas fa-users",
+        "journals.journal": "fas fa-book",
+        "articles.article": "fas fa-file-alt",
+        "articles.articleversion": "fas fa-file-upload",
+        "articles.review": "fas fa-comments",
+        "payments.invoice": "fas fa-receipt",
+        "payments.payment": "fas fa-credit-card",
+        "certificates.certificate": "fas fa-certificate",
+        "audit.auditlog": "fas fa-history",
+    },
+    
+    # Icons that are used when one is not manually specified
+    "default_icon_parents": "fas fa-chevron-circle-right",
+    "default_icon_children": "fas fa-circle",
+    
+    #################
+    # Related Modal #
+    #################
+    # Use modals instead of popups
+    "related_modal_active": False,
+    
+    #############
+    # UI Tweaks #
+    #############
+    # Relative paths to custom CSS/JS scripts (must be present in static files)
+    "custom_css": None,
+    "custom_js": None,
+    
+    # Whether to link font from fonts.googleapis.com
+    "use_google_fonts_cdn": True,
+    
+    # Whether to show the UI customizer on the sidebar
+    "show_ui_builder": False,
+    
+    ###############
+    # Change View #
+    ###############
+    # Render out the change view as a single form, or in tabs, current options are
+    # - single
+    # - horizontal_tabs (default)
+    # - vertical_tabs
+    # - collapsible
+    # - carousel
+    "changeform_format": "horizontal_tabs",
+    
+    # override change forms on a per modeladmin basis
+    "changeform_format_overrides": {
+        "accounts.user": "collapsible",
+        "articles.article": "horizontal_tabs",
+    },
+    
+    # Add a language dropdown into the admin
+    "language_chooser": False,
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-primary",
+    "accent": "accent-primary",
+    "navbar": "navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "default",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
+    },
+    "actions_sticky_top": False
+}
 
