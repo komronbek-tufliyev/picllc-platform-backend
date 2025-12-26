@@ -1,6 +1,43 @@
 #!/bin/bash
 set -e
 
+echo "Fixing permissions for volumes..."
+# Only fix permissions if running as root (for gosu to work)
+if [ "$(id -u)" = "0" ]; then
+    # Create necessary media subdirectories
+    mkdir -p /app/media/articles/manuscripts 2>/dev/null || true
+    mkdir -p /app/media/certificates 2>/dev/null || true
+    mkdir -p /app/media/invoices 2>/dev/null || true
+    
+    # Fix permissions on media directory, skipping system mount points
+    if [ -d /app/media ]; then
+        # Set ownership and permissions on the media directory itself
+        chown -R ujmp:ujmp /app/media 2>/dev/null || true
+        chmod -R 775 /app/media 2>/dev/null || true
+        
+        # Only chown/chmod actual directories, not system mount points
+        for dir in /app/media/*; do
+            if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+                case "$(basename "$dir")" in
+                    floppy|usb|cdrom|proc|sys|dev)
+                        # Skip system mount points
+                        continue
+                        ;;
+                    *)
+                        chown -R ujmp:ujmp "$dir" 2>/dev/null || true
+                        chmod -R 775 "$dir" 2>/dev/null || true
+                        ;;
+                esac
+            fi
+        done
+    fi
+    # Fix permissions on staticfiles
+    if [ -d /app/staticfiles ]; then
+        chown -R ujmp:ujmp /app/staticfiles 2>/dev/null || true
+        chmod -R 775 /app/staticfiles 2>/dev/null || true
+    fi
+fi
+
 echo "Waiting for PostgreSQL..."
 while ! nc -z ${DB_HOST:-postgres} ${DB_PORT:-5432}; do
   sleep 0.1
@@ -39,5 +76,10 @@ else:
 EOF
 fi
 
-echo "Starting application..."
-exec "$@"
+echo "Starting app as ujmp user..."
+# If running as root, switch to ujmp user; otherwise run as current user
+if [ "$(id -u)" = "0" ]; then
+    exec gosu ujmp "$@"
+else
+    exec "$@"
+fi

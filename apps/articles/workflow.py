@@ -36,42 +36,34 @@ ALLOWED_TRANSITIONS: Dict[ArticleStatus, Dict[ArticleStatus, List[str]]] = {
     },
     ArticleStatus.SUBMITTED: {
         ArticleStatus.DESK_CHECK: ['SYSTEM'],  # Auto-transition
-        ArticleStatus.REJECTED: ['REVIEWER'],  # Desk reject
+        ArticleStatus.REJECTED: ['ADMIN'],  # Desk reject (ADMIN only)
     },
     ArticleStatus.DESK_CHECK: {
-        ArticleStatus.UNDER_REVIEW: ['REVIEWER'],
-        ArticleStatus.REVISION_REQUIRED: ['REVIEWER'],
-        ArticleStatus.REJECTED: ['REVIEWER'],  # Desk reject
+        ArticleStatus.UNDER_REVIEW: ['ADMIN'],  # ADMIN only - send to review
+        ArticleStatus.REJECTED: ['ADMIN'],  # Desk reject (ADMIN only)
     },
     ArticleStatus.UNDER_REVIEW: {
-        ArticleStatus.REVISION_REQUIRED: ['REVIEWER'],
-        ArticleStatus.ACCEPTED: ['REVIEWER'],
-        ArticleStatus.REJECTED: ['REVIEWER'],
+        ArticleStatus.REVISION_REQUIRED: ['REVIEWER', 'ADMIN'],  # REVIEWER can request revision
+        ArticleStatus.ACCEPTED: ['ADMIN'],  # ADMIN only - final acceptance
+        ArticleStatus.REJECTED: ['ADMIN'],  # ADMIN only - final rejection
     },
     ArticleStatus.REVISION_REQUIRED: {
-        ArticleStatus.REVISED_SUBMITTED: ['AUTHOR'],
+        ArticleStatus.UNDER_REVIEW: ['SYSTEM'],  # Auto-transition after revision upload
     },
     ArticleStatus.REVISED_SUBMITTED: {
-        ArticleStatus.UNDER_REVIEW: ['REVIEWER'],
-        ArticleStatus.REJECTED: ['REVIEWER'],
+        ArticleStatus.UNDER_REVIEW: ['REVIEWER', 'ADMIN'],  # Legacy: Send back to review
+        ArticleStatus.REJECTED: ['ADMIN'],  # ADMIN only - final rejection
     },
     ArticleStatus.ACCEPTED: {
-        ArticleStatus.PAYMENT_PENDING: ['SYSTEM'],  # Auto-transition if APC enabled
-        ArticleStatus.PAID: ['SYSTEM'],  # If no APC or admin override
-    },
-    ArticleStatus.PAYMENT_PENDING: {
-        ArticleStatus.PAID: ['SYSTEM', 'ADMIN'],  # Webhook or admin override
+        ArticleStatus.PRODUCTION: ['ADMIN'],  # ADMIN only - move to production
         ArticleStatus.REJECTED: ['ADMIN'],  # Admin can reject even after acceptance
     },
-    ArticleStatus.PAID: {
-        ArticleStatus.PRODUCTION: ['REVIEWER'],
-    },
     ArticleStatus.PRODUCTION: {
-        ArticleStatus.SCHEDULED: ['REVIEWER'],
-        ArticleStatus.PUBLISHED: ['REVIEWER'],
+        ArticleStatus.SCHEDULED: ['ADMIN'],  # ADMIN only - schedule publication
+        ArticleStatus.PUBLISHED: ['ADMIN'],  # ADMIN only - publish
     },
     ArticleStatus.SCHEDULED: {
-        ArticleStatus.PUBLISHED: ['REVIEWER', 'SYSTEM'],
+        ArticleStatus.PUBLISHED: ['ADMIN', 'SYSTEM'],  # ADMIN or auto-publish
     },
     ArticleStatus.PUBLISHED: {
         ArticleStatus.CERTIFICATE_ISSUED: ['SYSTEM'],  # Auto-transition
@@ -156,20 +148,23 @@ def is_terminal_state(status: ArticleStatus) -> bool:
 
 def requires_payment(status: ArticleStatus) -> bool:
     """Check if a status requires payment before proceeding."""
-    return status == ArticleStatus.PAYMENT_PENDING
+    # Deprecated: Payment is now tracked via payment_status field, not Article.status
+    # Kept for backward compatibility
+    return False
 
 
 def can_publish(status: ArticleStatus, payment_status: str = None) -> bool:
     """
     Check if article can be published.
     
-    Business rule: Payment must be PAID before publication.
+    Business rule: Payment gate - payment_status must be PAID or NOT_REQUIRED.
     """
-    if status != ArticleStatus.PAID and status != ArticleStatus.PRODUCTION:
+    # Status must be ACCEPTED or PRODUCTION
+    if status not in [ArticleStatus.ACCEPTED, ArticleStatus.PRODUCTION]:
         return False
     
-    # Additional check: payment_status should be PAID
-    if payment_status and payment_status != 'PAID':
+    # Payment gate: payment_status must be PAID or NOT_REQUIRED
+    if payment_status and payment_status not in ['PAID', 'NOT_REQUIRED']:
         return False
     
     return True

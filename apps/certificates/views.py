@@ -9,6 +9,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from django.shortcuts import get_object_or_404
 from django.http import FileResponse
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.types import OpenApiTypes
 
 from .models import Certificate
 from .serializers import (
@@ -104,7 +106,22 @@ class CertificateVerificationViewSet(viewsets.ViewSet):
     """
     permission_classes = [AllowAny]
     throttle_classes = [CertificateVerificationThrottle]
+    serializer_class = CertificateVerificationSerializer
     
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='certificate_id',
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.PATH,
+                description='Certificate ID to verify'
+            ),
+        ],
+        responses={
+            200: CertificateVerificationSerializer,
+            404: OpenApiTypes.OBJECT,
+        }
+    )
     @action(detail=False, methods=['get'], url_path='(?P<certificate_id>[^/.]+)')
     def verify(self, request, certificate_id=None):
         """Verify certificate by ID."""

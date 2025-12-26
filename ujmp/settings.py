@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     
     # Local apps
+    'apps.core',  # Core utilities (health checks)
     'apps.accounts',
     'apps.journals',
     'apps.articles',
@@ -167,11 +168,18 @@ SPECTACULAR_SETTINGS = {
     'AUTHENTICATION_WHITELIST': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
+    'ENUM_NAME_OVERRIDES': {
+        # Map auto-generated enum names to proper names (from warnings)
+        'Status4e0Enum': 'ArticleStatusEnum',
+        'Status8d4Enum': 'InvoiceStatusEnum',
+        'Status69dEnum': 'PaymentStatusEnum',
+        'ProviderBffEnum': 'PaymentProviderEnum',
+    },
 }
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=3),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

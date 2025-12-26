@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     netcat-openbsd \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -31,19 +32,21 @@ RUN chmod +x /docker-entrypoint.sh
 # Copy project
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/staticfiles /app/media /app/logs
+# Create necessary directories and subdirectories
+RUN mkdir -p /app/staticfiles /app/media /app/logs && \
+    mkdir -p /app/media/articles/manuscripts && \
+    mkdir -p /app/media/certificates && \
+    mkdir -p /app/media/invoices
 
 # Create non-root user
 RUN useradd -m -u 1000 ujmp && \
     chown -R ujmp:ujmp /app && \
     chown ujmp:ujmp /docker-entrypoint.sh
 
-USER ujmp
-
 # Expose port
 EXPOSE 8000
 
+# Keep as root for entrypoint (will switch to ujmp user in entrypoint script)
 # Entrypoint
 ENTRYPOINT ["/docker-entrypoint.sh"]
 

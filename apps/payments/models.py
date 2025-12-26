@@ -90,7 +90,7 @@ class Invoice(models.Model):
         """
         Mark invoice as paid.
         
-        Business rule: This triggers article status transition to PAID.
+        Business rule: Updates Article.payment_status to PAID (does NOT change Article.status).
         """
         if self.status == self.Status.PAID:
             return  # Already paid, idempotent
@@ -104,17 +104,10 @@ class Invoice(models.Model):
         self.paid_at = timezone.now()
         self.save()
         
-        # Update article status
+        # Update article payment_status (NOT article.status)
         article = self.article
-        if article.status == 'PAYMENT_PENDING':
-            article.transition_status(
-                article.current_status_enum,
-                'SYSTEM',
-                user=user
-            )
-            # Manually set to PAID since transition_status might not handle this
-            article.status = 'PAID'
-            article.save()
+        article.payment_status = 'PAID'
+        article.save()
         
         # Log payment
         if user:

@@ -122,6 +122,36 @@ class ArticleWorkflowService:
         return article
     
     @staticmethod
+    def upload_initial_manuscript(
+        article: Article,
+        user,
+        manuscript_file,
+        notes: str = ''
+    ) -> ArticleVersion:
+        """Upload initial manuscript file (DRAFT status)."""
+        if article.status != ArticleStatus.DRAFT.value:
+            raise ValidationError("Article must be in DRAFT status to upload initial manuscript.")
+        
+        if article.corresponding_author != user:
+            raise ValidationError("Only the corresponding author can upload the manuscript.")
+        
+        # Check if initial version already exists
+        if article.versions.exists():
+            raise ValidationError("Initial manuscript already uploaded. Use upload_revision for updates.")
+        
+        # Create version 1 (initial submission)
+        version = ArticleVersion.objects.create(
+            article=article,
+            version_number=1,
+            manuscript_file=manuscript_file,
+            revision_type='INITIAL',
+            notes=notes,
+            created_by=user
+        )
+        
+        return version
+    
+    @staticmethod
     def submit_revision(
         article: Article,
         user,
@@ -151,8 +181,9 @@ class ArticleWorkflowService:
             created_by=user
         )
         
-        # Transition to REVISED_SUBMITTED
-        article.transition_status(ArticleStatus.REVISED_SUBMITTED, user.role, user)
+        # Auto-transition to UNDER_REVIEW (SYSTEM-driven, no manual intervention needed)
+        # Use SYSTEM role to trigger automatic transition
+        article.transition_status(ArticleStatus.UNDER_REVIEW, 'SYSTEM', user)
         
         return version
     
@@ -175,8 +206,9 @@ class ArticleWorkflowService:
             confidential_comments=''
         )
         
-        # Create invoice if journal requires APC
+        # Set payment_status and create invoice if journal requires APC
         if article.journal.apc_enabled and article.journal.apc_amount > 0:
+            # Create invoice
             Invoice.objects.get_or_create(
                 article=article,
                 defaults={
@@ -185,6 +217,13 @@ class ArticleWorkflowService:
                     'status': Invoice.Status.PENDING
                 }
             )
+            # Set payment_status to PENDING
+            article.payment_status = 'PENDING'
+        else:
+            # No APC required
+            article.payment_status = 'NOT_REQUIRED'
+        
+        article.save()
         
         # Send email notification
         from apps.notifications.tasks import send_article_accepted_email
@@ -218,23 +257,44 @@ class ArticleWorkflowService:
         return article
     
     @staticmethod
+    def move_to_production(article: Article, user) -> Article:
+        """Move article to production (ACCEPTED -> PRODUCTION)."""
+        current_status = ArticleStatus(article.status)
+        
+        if current_status != ArticleStatus.ACCEPTED:
+            raise ValidationError("Article must be in ACCEPTED status.")
+        
+        # Payment gate: payment_status must be PAID or NOT_REQUIRED
+        payment_status = article.get_payment_status()
+        if payment_status not in ['PAID', 'NOT_REQUIRED']:
+            raise ValidationError(
+                f"Article cannot move to production. Payment status must be PAID or NOT_REQUIRED, "
+                f"but is currently {payment_status}."
+            )
+        
+        article.transition_status(ArticleStatus.PRODUCTION, user.role, user)
+        
+        return article
+    
+    @staticmethod
     def publish_article(
         article: Article,
         user,
         publication_url: str
     ) -> Article:
-        """Publish article (PAID/PRODUCTION -> PUBLISHED)."""
+        """Publish article (ACCEPTED/PRODUCTION -> PUBLISHED)."""
         current_status = ArticleStatus(article.status)
         
-        # Business rule: Payment must be PAID
+        # Payment gate: payment_status must be PAID or NOT_REQUIRED
         payment_status = article.get_payment_status()
-        if payment_status != 'PAID':
+        if payment_status not in ['PAID', 'NOT_REQUIRED']:
             raise ValidationError(
-                "Article cannot be published. Payment must be PAID."
+                f"Article cannot be published. Payment status must be PAID or NOT_REQUIRED, "
+                f"but is currently {payment_status}."
             )
         
-        if current_status not in [ArticleStatus.PAID, ArticleStatus.PRODUCTION]:
-            raise ValidationError("Article must be in PAID or PRODUCTION status.")
+        if current_status not in [ArticleStatus.ACCEPTED, ArticleStatus.PRODUCTION]:
+            raise ValidationError("Article must be in ACCEPTED or PRODUCTION status.")
         
         article.publication_url = publication_url
         article.publication_date = timezone.now().date()

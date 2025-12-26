@@ -64,11 +64,24 @@ class Article(models.Model):
         related_name='articles'
     )
     
-    # Workflow Status
+    # Workflow Status (Scientific Lifecycle)
     status = models.CharField(
         max_length=30,
         choices=[(status.value, status.name) for status in ArticleStatus],
         default=ArticleStatus.DRAFT.value
+    )
+    
+    # Payment Status (Business Lifecycle)
+    payment_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('NONE', 'None'),
+            ('PENDING', 'Pending'),
+            ('PAID', 'Paid'),
+            ('NOT_REQUIRED', 'Not Required'),
+        ],
+        default='NONE',
+        help_text='Payment status separate from article scientific workflow'
     )
     
     # Declarations
@@ -136,31 +149,30 @@ class Article(models.Model):
         final_status = new_status
         
         # Auto-transition: SUBMITTED -> DESK_CHECK
+        # Validate the user can transition to SUBMITTED first, then auto-transition to DESK_CHECK
         if new_status == ArticleStatus.SUBMITTED:
+            # Validate user can transition to SUBMITTED
+            if not can_transition(current_status, ArticleStatus.SUBMITTED, user_role):
+                raise ValidationError(
+                    f"Transition from {current_status.value} to {ArticleStatus.SUBMITTED.value} "
+                    f"is not allowed for role {user_role}"
+                )
+            # Auto-transition to DESK_CHECK (SYSTEM transition)
             final_status = ArticleStatus.DESK_CHECK
         
-        # Auto-transition: ACCEPTED -> PAYMENT_PENDING or PAID
-        elif new_status == ArticleStatus.ACCEPTED:
-            if self.journal.apc_enabled and self.journal.apc_amount > 0:
-                final_status = ArticleStatus.PAYMENT_PENDING
-            else:
-                final_status = ArticleStatus.PAID
+        # Note: ACCEPTED no longer auto-transitions to payment states
+        # Payment status is managed separately via payment_status field
         
-        # Validate transition (use final_status for auto-transitions)
-        if not can_transition(current_status, final_status, user_role):
-            raise ValidationError(
-                f"Transition from {current_status.value} to {final_status.value} "
-                f"is not allowed for role {user_role}"
-            )
-        
-        # Business rule: Payment before publication
-        if final_status == ArticleStatus.PUBLISHED:
-            # Check payment status
-            payment_status = self.get_payment_status()
-            if not can_publish(current_status, payment_status):
+        # Validate transition for non-auto-transitions
+        else:
+            if not can_transition(current_status, final_status, user_role):
                 raise ValidationError(
-                    "Article cannot be published. Payment must be PAID."
+                    f"Transition from {current_status.value} to {final_status.value} "
+                    f"is not allowed for role {user_role}"
                 )
+        
+        # Business rule: Payment gate check is handled in service layer
+        # (not in transition_status to keep separation of concerns)
         
         # Business rule: Certificate only after publication
         if final_status == ArticleStatus.CERTIFICATE_ISSUED:
@@ -190,11 +202,8 @@ class Article(models.Model):
     
     def get_payment_status(self) -> str:
         """Get current payment status."""
-        try:
-            invoice = self.invoice
-            return invoice.status
-        except Exception:
-            return 'NONE'
+        # Return the payment_status field value
+        return self.payment_status
     
     def can_be_published_by(self, user) -> bool:
         """Check if article can be published by the given user."""

@@ -5,22 +5,25 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
     SpectacularSwaggerView
 )
-
-
-def health_check(request):
-    """Health check endpoint for Docker/load balancer."""
-    return JsonResponse({'status': 'healthy'})
+from apps.core.views import (
+    health_check,
+    health_check_liveness,
+    health_check_readiness
+)
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    
+    # Health check endpoints (Actuator-style)
     path('health/', health_check, name='health'),
+    path('health/live/', health_check_liveness, name='health_live'),
+    path('health/ready/', health_check_readiness, name='health_ready'),
     
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

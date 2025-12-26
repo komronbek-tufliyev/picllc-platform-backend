@@ -3,6 +3,8 @@ Serializers for articles.
 """
 from rest_framework import serializers
 from django.core.exceptions import ValidationError
+from drf_spectacular.utils import extend_schema_field
+from drf_spectacular.types import OpenApiTypes
 from .models import Article, ArticleVersion, Review
 from .workflow import ArticleStatus, get_allowed_transitions
 from apps.journals.serializers import JournalListSerializer
@@ -36,7 +38,9 @@ class ReviewSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'reviewer', 'created_at', 'updated_at']
     
-    def get_reviewer_name(self, obj):
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_reviewer_name(self, obj) -> str:
+        """Get reviewer's full name or email."""
         if obj.reviewer:
             return f"{obj.reviewer.first_name} {obj.reviewer.last_name}".strip() or obj.reviewer.email
         return None
@@ -81,7 +85,8 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
             'submitted_at', 'allowed_transitions', 'payment_status', 'has_certificate'
         ]
     
-    def get_allowed_transitions(self, obj):
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_allowed_transitions(self, obj) -> list:
         """Get allowed status transitions for current user."""
         request = self.context.get('request')
         if request and request.user:
@@ -91,11 +96,21 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
             return [status.value for status in transitions]
         return []
     
+    @extend_schema_field(OpenApiTypes.STR)
     def get_payment_status(self, obj):
-        """Get payment status."""
+        """
+        Get payment status.
+        
+        Payment status is separate from article status and tracks the payment lifecycle:
+        - NONE: No invoice yet (article not accepted)
+        - PENDING: Invoice created, payment not completed
+        - PAID: Payment completed
+        - NOT_REQUIRED: APC not required for this article
+        """
         return obj.get_payment_status()
     
-    def get_has_certificate(self, obj):
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_has_certificate(self, obj) -> bool:
         """Check if article has a certificate."""
         try:
             return obj.certificate is not None
@@ -139,7 +154,12 @@ class ArticleUpdateSerializer(serializers.ModelSerializer):
 
 
 class ArticleWorkflowActionSerializer(serializers.Serializer):
-    """Serializer for workflow actions."""
+    """
+    Serializer for workflow actions.
+    
+    Note: Payment operations (initiate_payment, mark_as_paid) do NOT change Article.status.
+    Payment is tracked separately via Article.payment_status field.
+    """
     action = serializers.ChoiceField(choices=[
         ('submit', 'Submit article'),
         ('desk_reject', 'Desk reject'),
@@ -147,7 +167,8 @@ class ArticleWorkflowActionSerializer(serializers.Serializer):
         ('request_revision', 'Request revision'),
         ('accept', 'Accept article'),
         ('reject', 'Reject article'),
-        ('publish', 'Publish article'),
+        ('move_to_production', 'Move to production - requires payment_status = PAID or NOT_REQUIRED'),
+        ('publish', 'Publish article - requires payment_status = PAID or NOT_REQUIRED'),
     ])
     revision_type = serializers.ChoiceField(
         choices=[('MINOR', 'Minor'), ('MAJOR', 'Major')],

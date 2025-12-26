@@ -13,9 +13,33 @@ from django.utils.decorators import method_decorator
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework import serializers
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .models import Invoice, Payment
 from apps.articles.throttling import WebhookRateThrottle
+
+
+class PaymeWebhookSerializer(serializers.Serializer):
+    """Serializer for Payme webhook request."""
+    transaction_id = serializers.CharField(required=False)
+    invoice_number = serializers.CharField(required=False)
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    status = serializers.CharField(required=False)
+
+
+class ClickWebhookSerializer(serializers.Serializer):
+    """Serializer for Click webhook request."""
+    transaction_id = serializers.CharField(required=False)
+    invoice_number = serializers.CharField(required=False)
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    status = serializers.CharField(required=False)
+
+
+class WebhookResponseSerializer(serializers.Serializer):
+    """Serializer for webhook response."""
+    status = serializers.CharField()
+    error = serializers.CharField(required=False)
 
 
 def verify_payme_signature(data, signature):
@@ -56,7 +80,18 @@ def verify_click_signature(data, signature):
 class PaymeWebhookView(APIView):
     """Webhook endpoint for Payme payment notifications."""
     throttle_classes = [WebhookRateThrottle]
+    serializer_class = PaymeWebhookSerializer
     
+    @extend_schema(
+        request=PaymeWebhookSerializer,
+        responses={
+            200: WebhookResponseSerializer,
+            400: WebhookResponseSerializer,
+            401: WebhookResponseSerializer,
+            404: WebhookResponseSerializer,
+            500: WebhookResponseSerializer,
+        }
+    )
     def post(self, request):
         """Handle Payme webhook."""
         try:
@@ -137,7 +172,18 @@ class PaymeWebhookView(APIView):
 class ClickWebhookView(APIView):
     """Webhook endpoint for Click payment notifications."""
     throttle_classes = [WebhookRateThrottle]
+    serializer_class = ClickWebhookSerializer
     
+    @extend_schema(
+        request=ClickWebhookSerializer,
+        responses={
+            200: WebhookResponseSerializer,
+            400: WebhookResponseSerializer,
+            401: WebhookResponseSerializer,
+            404: WebhookResponseSerializer,
+            500: WebhookResponseSerializer,
+        }
+    )
     def post(self, request):
         """Handle Click webhook."""
         try:

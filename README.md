@@ -5,21 +5,27 @@ Django REST Framework backend for the Unified Journal Management Platform.
 ## Features
 
 - **Multi-journal support**: Manage multiple journals in a single platform
-- **Role-based access control**: Author, Reviewer, Admin roles
-- **Strict workflow state machine**: Enforced article lifecycle transitions
-- **Payment integration**: Payme and Click payment providers
-- **Certificate system**: PDF certificate generation with QR codes
+- **Role-based access control**: Author, Reviewer, Admin roles with strict permissions
+- **Dual lifecycle architecture**: Scientific workflow (Article.status) separate from business workflow (Article.payment_status)
+- **Strict workflow state machine**: Enforced article lifecycle transitions with role-based permissions
+- **Payment integration**: Payme and Click payment providers with webhook support
+- **Certificate system**: PDF certificate generation with QR codes and public verification
+- **Modern admin panel**: Jazzmin-based admin UI with workflow actions (superadmin-only)
+- **API documentation**: Auto-generated OpenAPI/Swagger documentation
 - **Audit logging**: Complete audit trail of all critical actions
+- **Docker support**: Full Docker Compose setup for development and production
 
 ## Technology Stack
 
-- Python 3.12
-- Django 4.x
+- Python 3.14
+- Django 5.x
 - Django REST Framework
 - PostgreSQL
 - Celery + Redis (background jobs)
 - ReportLab (PDF generation)
 - MinIO/S3 (file storage)
+- django-jazzmin (Modern admin UI)
+- drf-spectacular (OpenAPI/Swagger documentation)
 
 ## Project Structure
 
@@ -108,11 +114,15 @@ Key environment variables (see `.env.example`):
 - Logo and publication settings
 
 ### Article
-- Strict workflow state machine
-- Status transitions enforced by role
+- **Dual lifecycle architecture**:
+  - `status`: Scientific/editorial workflow (DRAFT → SUBMITTED → DESK_CHECK → UNDER_REVIEW → ACCEPTED → PRODUCTION → PUBLISHED)
+  - `payment_status`: Business workflow (NONE → PENDING → PAID or NOT_REQUIRED)
+- Strict workflow state machine with role-based transitions
 - Business rules:
-  - Payment required before publication
+  - Invoice created only when article is ACCEPTED
+  - Payment gate: Articles must have `payment_status = PAID` or `NOT_REQUIRED` before moving to PRODUCTION or PUBLISHING
   - Certificate only after publication
+  - Payment operations never modify `Article.status` (scientific workflow)
 
 ### ArticleVersion
 - Version history for revisions
@@ -138,55 +148,185 @@ Key environment variables (see `.env.example`):
 
 ## Workflow States
 
-Article workflow states (from `tz.md`):
+### Scientific Workflow (Article.status)
+Article scientific/editorial lifecycle:
 
 - `DRAFT` → `SUBMITTED` → `DESK_CHECK` → `UNDER_REVIEW`
-- `REVISION_REQUIRED` → `REVISED_SUBMITTED` → `UNDER_REVIEW`
-- `ACCEPTED` → `PAYMENT_PENDING` → `PAID` → `PRODUCTION` → `PUBLISHED`
-- `PUBLISHED` → `CERTIFICATE_ISSUED`
+- `REVISION_REQUIRED` → `UNDER_REVIEW` (auto-transition after revision upload)
+- `UNDER_REVIEW` → `ACCEPTED` (Admin only) or `REJECTED` (Admin only)
+- `ACCEPTED` → `PRODUCTION` → `PUBLISHED` (payment gate enforced)
+- `PUBLISHED` → `CERTIFICATE_ISSUED` (auto-transition)
 - `REJECTED` → `ARCHIVED`
+
+### Business Workflow (Article.payment_status)
+Payment lifecycle (separate from scientific workflow):
+
+- `NONE`: No invoice yet (pre-acceptance)
+- `PENDING`: Invoice created, payment not completed
+- `PAID`: Payment completed
+- `NOT_REQUIRED`: APC not required for this article
+
+**Key Principle**: Payment operations (`initiate_payment`, `mark_as_paid`) never modify `Article.status`. They only update `Article.payment_status`.
 
 ## Business Rules
 
-1. **Payment before publication**: Articles cannot be published unless payment status is `PAID`
-2. **Certificate after publication**: Certificates can only be issued for published articles
-3. **Strict state transitions**: Only allowed transitions are permitted based on user role
-4. **Audit logging**: All critical actions are logged
+1. **Dual lifecycle separation**: `Article.status` (scientific) and `Article.payment_status` (business) are tracked separately
+2. **Invoice creation**: Invoice created only when article status becomes `ACCEPTED`
+3. **Payment gate**: Articles must have `payment_status = PAID` or `NOT_REQUIRED` before moving to PRODUCTION or PUBLISHING
+4. **Payment operations**: `initiate_payment` and `mark_as_paid` never modify `Article.status`
+5. **Certificate after publication**: Certificates can only be issued for published articles
+6. **Strict state transitions**: Only allowed transitions are permitted based on user role
+7. **Role-based permissions**:
+   - **ADMIN**: All workflow actions, final accept/reject, publishing
+   - **REVIEWER**: Request revisions (from UNDER_REVIEW only), submit recommendations
+   - **AUTHOR**: Submit articles, upload manuscripts/revisions
+8. **Audit logging**: All critical actions are logged
 
 ## API Endpoints
 
-API endpoints will be implemented in subsequent phases. Base URLs:
+Complete API documentation available at `/api/docs/` (Swagger UI) and `/api/redoc/` (ReDoc).
 
-- `/api/auth/` - Authentication
-- `/api/journals/` - Journal management
-- `/api/articles/` - Article management
-- `/api/payments/` - Payment processing
-- `/api/certificates/` - Certificate management
-- `/api/audit/` - Audit logs
-- `/verify/certificate/` - Public certificate verification
+Base URLs:
+- `/api/auth/` - Authentication (JWT tokens, registration, profile)
+- `/api/journals/` - Journal management (CRUD, assignments)
+- `/api/articles/` - Article management (CRUD, workflow actions, manuscript uploads)
+- `/api/payments/` - Payment processing (invoices, payment initiation, webhooks)
+- `/api/certificates/` - Certificate management (list, download, revoke)
+- `/api/audit/` - Audit logs (read-only)
+- `/verify/certificate/<certificate_id>/` - Public certificate verification
+
+**Health Check Endpoints:**
+- `/health/` - Comprehensive health check (database, Redis, Celery, storage, disk)
+- `/health/live/` - Liveness probe (application running)
+- `/health/ready/` - Readiness probe (ready to serve traffic)
+
+See `api_contract.md` for complete API specification (frozen contract).  
+See `HEALTH_CHECK.md` for health check endpoint documentation.
 
 ## Development
 
-### Running Celery
+### Docker Development (Recommended)
 
 ```bash
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f web
+
+# Run migrations
+docker compose exec web python manage.py migrate
+
+# Create superuser
+docker compose exec web python manage.py createsuperuser
+
+# Access admin panel
+# http://localhost:8000/admin/
+```
+
+See `DOCKER.md` for complete Docker setup guide.
+
+### Local Development
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run migrations
+python manage.py migrate
+
+# Create superuser
+python manage.py createsuperuser
+
+# Run development server
+python manage.py runserver
+
+# Run Celery worker
 celery -A ujmp worker -l info
-celery -A ujmp beat -l info  # For scheduled tasks
+
+# Run Celery beat (scheduled tasks)
+celery -A ujmp beat -l info
 ```
 
 ### Running Tests
 
 ```bash
-python manage.py test
+python manage.py test --settings=ujmp.test_settings
 ```
+
+### Admin Panel
+
+- **URL**: `http://localhost:8000/admin/`
+- **Modern UI**: Jazzmin-based admin interface
+- **Workflow Actions**: Available to superadmins only
+  - Send to review
+  - Request revision
+  - Accept/Reject articles
+  - Move to production
+  - Publish articles
+- **Payment Status**: Separate display for scientific vs business workflow
 
 ## Documentation
 
-See `doc/` directory for:
-- `requirements.md` - Functional requirements
-- `design.md` - UI/UX design specifications
-- `tasks.md` - Development roadmap
-- `tz.md` - Technical specification
+### Core Documentation
+- `README.md` - This file (project overview)
+- `PROJECT_COMPLETION.md` - Comprehensive project completion summary
+- `CHANGELOG.md` - Version history and changes
+- `api_contract.md` - Frozen API contract (immutable)
+
+### Deployment & Operations
+- `DEPLOYMENT.md` - Production deployment guide
+- `DOCKER.md` - Docker setup and configuration
+- `SECURITY.md` - Security hardening guide
+- `OPERATIONS.md` - Operational procedures
+
+### Technical Documentation
+- `workflow_diagram.md` - Workflow state machine visualization
+- `doc/requirements.md` - Functional requirements
+- `doc/design.md` - UI/UX design specifications
+- `doc/tasks.md` - Development roadmap
+- `doc/tz.md` - Technical specification
+
+## Quick Start
+
+### Docker (Recommended)
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd picllc-platform-backend
+
+# Start services
+docker compose up -d
+
+# Create superuser
+docker compose exec web python manage.py createsuperuser
+
+# Access admin panel
+# http://localhost:8000/admin/
+```
+
+### Local Development
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run migrations
+python manage.py migrate
+
+# Create superuser
+python manage.py createsuperuser
+
+# Run server
+python manage.py runserver
+```
+
+## Project Status
+
+✅ **PRODUCTION READY**
+
+All features implemented, tested, and documented. See `PROJECT_COMPLETION.md` for details.
 
 ## License
 
